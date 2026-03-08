@@ -2,47 +2,46 @@ import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# Configuration
-st.set_page_config(page_title="Chantier Alpha LIVE", layout="wide")
+# 1. Configuration de base
+st.set_page_config(page_title="Chantier Alpha", layout="wide")
 
-# URL CSV Directe (sans fioritures pour éviter le 400 Bad Request)
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ26Il3JhjmDpmhM-TaSsA7e7qPxCsg7H4cX1xcUbolrRfDBjOcD7HvCRMpQQKa936DNfwaKyVSYQLX/pub?gid=0&single=true&output=csv"
-
-# Rafraîchissement automatique toutes les 10 secondes
+# 2. Rafraîchissement automatique (10 secondes)
 st_autorefresh(interval=10000, key="datarefresh")
 
-st.title("🏗️ Suivi Chantier Alpha - Temps Réel")
+# URL CSV de votre Google Sheet
+URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ26Il3JhjmDpmhM-TaSsA7e7qPxCsg7H4cX1xcUbolrRfDBjOcD7HvCRMpQQKa936DNfwaKyVSYQLX/pub?gid=0&single=true&output=csv"
 
+st.title("🏗️ Suivi Chantier Alpha")
+
+# 3. Fonction de chargement avec gestion d'erreur simplifiée
 def load_data():
-    # On lit directement l'URL. Pandas gère très bien la mise à jour sur les URL publiées.
-    return pd.read_csv(SHEET_URL)
+    try:
+        # On lit le CSV sans forcer les noms de colonnes au début pour éviter le crash
+        df = pd.read_csv(URL)
+        return df
+    except:
+        return None
 
-try:
-    df = load_data()
-    
+df = load_data()
+
+# 4. Affichage intelligent
+if df is not None:
     if not df.empty:
-        # On renomme les colonnes selon votre structure réelle
-        # Colonne 0: Date, 1: Heure, 2: Utilisateur, 3: Message
-        df.columns = ['Date', 'Heure', 'Utilisateur', 'Message']
+        # On affiche un petit résumé en haut
+        st.metric("Nombre de messages", len(df))
         
-        # Stats en haut
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Messages reçus", len(df))
-        c2.metric("Dernière activité", df.iloc[-1]['Heure'])
-        c3.metric("Statut", "🟢 Opérationnel")
-
-        # Affichage du dernier message de façon très visible
-        dernier_msg = df.iloc[-1]['Message']
-        st.info(f"🎤 **Dernière transmission :** {dernier_msg}")
-
+        # On affiche le dernier message de la dernière colonne (peu importe son nom)
+        dernier_message = df.iloc[-1, -1] 
+        st.success(f"**Dernière transmission :** {dernier_message}")
+        
         st.divider()
-
-        # Journal de bord (Inversé pour voir le plus récent en haut)
-        st.subheader("📝 Journal de bord en direct")
-        st.dataframe(df.iloc[::-1], use_container_width=True, hide_index=True)
+        
+        # On affiche le tableau complet (inversé)
+        st.subheader("Historique")
+        st.dataframe(df.iloc[::-1], use_container_width=True)
     else:
-        st.info("En attente de données...")
+        st.info("Le fichier est vide. Parlez dans l'iPhone pour le remplir !")
+else:
+    st.error("Connexion à Google Sheets interrompue. Je réessaie dans 10s...")
 
-except Exception as e:
-    st.error(f"Connexion au flux en cours... Veuillez patienter.")
-    # Optionnel pour le debug : st.write(e)
+st.caption(f"Dernière mise à jour : {pd.Timestamp.now().strftime('%H:%M:%S')}")
