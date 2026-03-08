@@ -1,57 +1,64 @@
 import streamlit as st
 import pandas as pd
+import requests
+from io import StringIO
 import time
 
-# 1. CONFIGURATION DE LA PAGE
-st.set_page_config(page_title="Dashboard Chantier Alpha", layout="wide")
+# 1. CONFIGURATION
+st.set_page_config(page_title="LIVE Chantier Alpha", layout="wide")
 
 # URL CSV de votre Google Sheet
-SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ26Il3JhjmDpmhM-TaSsA7e7qPxCsg7H4cX1xcUbolrRfDBjOcD7HvCRMpQQKa936DNfwaKyVSYQLX/pub?gid=0&single=true&output=csv"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ26Il3JhjmDpmhM-TaSsA7e7qPxCsg7H4cX1xcUbolrRfDBjOcD7HvCRMpQQKa936DNfwaKyVSYQLX/pub?gid=0&single=true&output=csv"
 
-# 2. CONFIGURATION DU RAFRAÎCHISSEMENT (Toutes les 5 secondes)
-# Cette fonction force Streamlit à relancer tout le script automatiquement
-if "load_count" not in st.session_state:
-    st.session_state.load_count = 0
+# 2. SYSTÈME DE RAFRAÎCHISSEMENT AUTO (Toutes les 10 secondes pour éviter de bloquer Google)
+# On utilise un intervalle un peu plus long pour laisser Google respirer
+from streamlit_autorefresh import st_autorefresh
+count = st_autorefresh(interval=10000, limit=None, key="fec_counter")
 
-# Commande magique pour le rafraîchissement auto
-st.empty() # Aide à la fluidité
-st_autorefresh = st.empty() 
-
-# 3. FONCTION DE CHARGEMENT (SANS CACHE POUR LE LIVE)
-def load_data():
-    # Le timestamp force Google à ignorer sa propre mise en cache
-    query_url = f"{SHEET_CSV_URL}&nocache={time.time()}"
-    data = pd.read_csv(query_url)
-    if not data.empty:
-        data.columns = ['Date', 'Heure', 'Utilisateur', 'Message']
-    return data
+# 3. FONCTION DE LECTURE ROBUSTE
+def get_data_from_google():
+    try:
+        # On force Google à ne pas utiliser son cache avec un paramètre aléatoire
+        headers = {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+        response = requests.get(f"{SHEET_URL}&t={int(time.time())}", headers=headers)
+        
+        if response.status_code == 200:
+            # On transforme le texte reçu en DataFrame
+            data = pd.read_csv(StringIO(response.text))
+            
+            # Nettoyage et nommage des colonnes
+            if not data.empty:
+                # On s'assure d'avoir 4 colonnes, même si le Sheet est bizarre
+                data.columns = ['Date', 'Heure', 'Utilisateur', 'Message'][:len(data.columns)]
+                return data.dropna(subset=[data.columns[-1]]) # On garde si le message n'est pas vide
+        return pd.DataFrame()
+    except Exception as e:
+        return None
 
 # --- AFFICHAGE ---
-st.title("🏗️ Suivi Chantier Alpha (LIVE)")
+st.title("🏗️ Dashboard Live - Projet Alpha")
 
-try:
-    df = load_data()
-    
-    # Indicateurs
-    col1, col2 = st.columns(2)
-    col1.metric("Total Messages", len(df))
-    
+df = get_data_from_google()
+
+if df is not None:
     if not df.empty:
-        dernier_log = df.iloc[-1]
-        col2.metric("Dernière MAJ", dernier_log['Heure'])
-        st.success(f"**Dernier message :** {dernier_log['Message']}")
-        
+        # Métriques
+        c1, c2 = st.columns(2)
+        c1.metric("Total Rapports", len(df))
+        c2.metric("Statut", "📡 Connecté", delta="Live")
+
+        # Dernier message en évidence
+        dernier = df.iloc[-1]
+        st.info(f"🎤 **Dernière dictée ({dernier['Heure']}) :** {dernier['Message']}")
+
         st.divider()
-        
+
         # Tableau (Plus récent en haut)
         st.subheader("Historique des transmissions")
         st.dataframe(df.iloc[::-1], use_container_width=True, hide_index=True)
     else:
-        st.info("En attente de données...")
+        st.warning("Le tableau Google Sheet est vide ou mal formaté.")
+else:
+    st.error("Impossible de joindre Google Sheets. Nouvelle tentative dans 10s...")
 
-except Exception as e:
-    st.warning("Synchronisation avec Google Sheets en cours...")
-
-# 4. LE MOTEUR DE RAFRAÎCHISSEMENT (Solution stable)
-time.sleep(5)
-st.rerun() # Force Streamlit à relancer le code proprement
+st.caption(f"Dernière actualisation du dashboard : {time.strftime('%H:%M:%S')}")
