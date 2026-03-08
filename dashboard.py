@@ -2,49 +2,65 @@ import streamlit as st
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Dashboard Chantier Alpha", layout="wide")
+# Configuration de la page
+st.set_page_config(
+    page_title="Dashboard Chantier Alpha",
+    page_icon="🏗️",
+    layout="wide"
+)
 
-# --- CONFIGURATION ---
-# Collez ici le lien "Publier sur le web" (format CSV)
+# --- CONFIGURATION DU LIEN ---
+# Votre URL de publication CSV
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ26Il3JhjmDpmhM-TaSsA7e7qPxCsg7H4cX1xcUbolrRfDBjOcD7HvCRMpQQKa936DNfwaKyVSYQLX/pub?gid=0&single=true&output=csv"
 
-st.title("🏗️ Suivi Chantier Alpha - Temps Réel")
+# Titre du Dashboard
+st.title("🏗️ Suivi de Chantier en Temps Réel")
+st.markdown("Ce dashboard se met à jour automatiquement dès qu'un message est envoyé depuis l'iPhone.")
 
-# Fonction pour charger les données
+# Fonction pour charger les données avec bypass du cache Google
 def load_data():
-    # On ajoute un paramètre bidon à l'URL pour forcer Google à nous donner les données fraîches
-    df = pd.read_csv(f"{SHEET_CSV_URL}&cache={time.time()}")
-    return df
+    # On ajoute un timestamp à l'URL pour forcer Google à donner les données les plus récentes
+    query_url = f"{SHEET_CSV_URL}&cache_buster={time.time()}"
+    data = pd.read_csv(query_url)
+    
+    # Nettoyage : on enlève les lignes où le message est vide
+    if not data.empty:
+        # On suppose que la colonne 4 (index 3) est le message
+        # On renomme les colonnes pour être sûr du rendu
+        data.columns = ['Date', 'Heure', 'Utilisateur', 'Message']
+        data = data.dropna(subset=['Message'])
+    return data
 
-# Création d'un espace vide pour rafraîchir le contenu
+# --- ZONE D'AFFICHAGE DYNAMIQUE ---
 placeholder = st.empty()
 
+# Boucle de rafraîchissement automatique
 while True:
     try:
         df = load_data()
         
         with placeholder.container():
-            # 1. Indicateurs clés
+            # 1. Barre de statistiques (Metrics)
             col1, col2, col3 = st.columns(3)
-            col1.metric("Messages reçus", len(df))
-            col2.metric("Dernière activité", df.iloc[-1, 1] if not df.empty else "--")
-            col3.metric("Statut Système", "🟢 Opérationnel")
+            col1.metric("Total Rapports", len(df))
+            
+            if not df.empty:
+                dernier_log = df.iloc[-1]
+                col2.metric("Dernier passage", dernier_log['Heure'])
+                st.success(f"**Dernier message reçu :** {dernier_log['Message']}")
+            else:
+                col2.metric("Dernier passage", "--")
+                st.info("En attente de données du terrain...")
 
             st.divider()
 
-            # 2. Le flux d'activité (les derniers messages en haut)
-            st.subheader("📝 Journal de bord en direct")
-            if not df.empty:
-                # On inverse l'ordre pour voir le plus récent en haut
-                st.dataframe(df.iloc[::-1], use_container_width=True)
-            else:
-                st.info("En attente de la première retranscription...")
-
-            # 3. Petit graphique pour faire "pro" (nombre de messages par heure)
-            # (Optionnel selon vos colonnes)
+            # 2. Tableau principal (Derniers messages en haut)
+            st.subheader("📋 Historique des transmissions")
+            # On inverse l'ordre pour voir le plus récent en premier
+            st.dataframe(df.iloc[::-1], use_container_width=True, hide_index=True)
 
     except Exception as e:
-        st.error(f"Connexion au flux en cours... {e}")
+        st.error(f"Erreur de connexion au flux Google : {e}")
 
-    # Attendre 5 secondes avant de rafraîchir
+    # Attendre 5 secondes avant de recommencer la boucle
     time.sleep(5)
