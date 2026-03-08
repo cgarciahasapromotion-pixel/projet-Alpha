@@ -47,4 +47,4 @@ while True:
         st.error(f"Connexion au flux en cours... {e}")
 
     # Attendre 5 secondes avant de rafraîchir
-    time.sleep(5)board.py
+    time.sleep(5)
