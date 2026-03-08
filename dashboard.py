@@ -1,64 +1,48 @@
 import streamlit as st
 import pandas as pd
-import requests
-from io import StringIO
-import time
+from streamlit_autorefresh import st_autorefresh
 
-# 1. CONFIGURATION
-st.set_page_config(page_title="LIVE Chantier Alpha", layout="wide")
+# Configuration
+st.set_page_config(page_title="Chantier Alpha LIVE", layout="wide")
 
-# URL CSV de votre Google Sheet
+# URL CSV Directe (sans fioritures pour éviter le 400 Bad Request)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ26Il3JhjmDpmhM-TaSsA7e7qPxCsg7H4cX1xcUbolrRfDBjOcD7HvCRMpQQKa936DNfwaKyVSYQLX/pub?gid=0&single=true&output=csv"
 
-# 2. SYSTÈME DE RAFRAÎCHISSEMENT AUTO (Toutes les 10 secondes pour éviter de bloquer Google)
-# On utilise un intervalle un peu plus long pour laisser Google respirer
-from streamlit_autorefresh import st_autorefresh
-count = st_autorefresh(interval=10000, limit=None, key="fec_counter")
+# Rafraîchissement automatique toutes les 10 secondes
+st_autorefresh(interval=10000, key="datarefresh")
 
-# 3. FONCTION DE LECTURE ROBUSTE
-def get_data_from_google():
-    try:
-        # On force Google à ne pas utiliser son cache avec un paramètre aléatoire
-        headers = {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
-        response = requests.get(f"{SHEET_URL}&t={int(time.time())}", headers=headers)
-        
-        if response.status_code == 200:
-            # On transforme le texte reçu en DataFrame
-            data = pd.read_csv(StringIO(response.text))
-            
-            # Nettoyage et nommage des colonnes
-            if not data.empty:
-                # On s'assure d'avoir 4 colonnes, même si le Sheet est bizarre
-                data.columns = ['Date', 'Heure', 'Utilisateur', 'Message'][:len(data.columns)]
-                return data.dropna(subset=[data.columns[-1]]) # On garde si le message n'est pas vide
-        return pd.DataFrame()
-    except Exception as e:
-        return None
+st.title("🏗️ Suivi Chantier Alpha - Temps Réel")
 
-# --- AFFICHAGE ---
-st.title("🏗️ Dashboard Live - Projet Alpha")
+def load_data():
+    # On lit directement l'URL. Pandas gère très bien la mise à jour sur les URL publiées.
+    return pd.read_csv(SHEET_URL)
 
-df = get_data_from_google()
-
-if df is not None:
+try:
+    df = load_data()
+    
     if not df.empty:
-        # Métriques
-        c1, c2 = st.columns(2)
-        c1.metric("Total Rapports", len(df))
-        c2.metric("Statut", "📡 Connecté", delta="Live")
+        # On renomme les colonnes selon votre structure réelle
+        # Colonne 0: Date, 1: Heure, 2: Utilisateur, 3: Message
+        df.columns = ['Date', 'Heure', 'Utilisateur', 'Message']
+        
+        # Stats en haut
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Messages reçus", len(df))
+        c2.metric("Dernière activité", df.iloc[-1]['Heure'])
+        c3.metric("Statut", "🟢 Opérationnel")
 
-        # Dernier message en évidence
-        dernier = df.iloc[-1]
-        st.info(f"🎤 **Dernière dictée ({dernier['Heure']}) :** {dernier['Message']}")
+        # Affichage du dernier message de façon très visible
+        dernier_msg = df.iloc[-1]['Message']
+        st.info(f"🎤 **Dernière transmission :** {dernier_msg}")
 
         st.divider()
 
-        # Tableau (Plus récent en haut)
-        st.subheader("Historique des transmissions")
+        # Journal de bord (Inversé pour voir le plus récent en haut)
+        st.subheader("📝 Journal de bord en direct")
         st.dataframe(df.iloc[::-1], use_container_width=True, hide_index=True)
     else:
-        st.warning("Le tableau Google Sheet est vide ou mal formaté.")
-else:
-    st.error("Impossible de joindre Google Sheets. Nouvelle tentative dans 10s...")
+        st.info("En attente de données...")
 
-st.caption(f"Dernière actualisation du dashboard : {time.strftime('%H:%M:%S')}")
+except Exception as e:
+    st.error(f"Connexion au flux en cours... Veuillez patienter.")
+    # Optionnel pour le debug : st.write(e)
